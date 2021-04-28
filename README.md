@@ -1,6 +1,6 @@
 ### Hi there 👋
 
-Here are some ideas to get you started:
+Welcome to my Profile:
 
 - 🔭 I’m currently working on Data Science Projects
 - 🌱 I’m currently learning Data Scientist with Python (Specialization) track course from DataCamp.
