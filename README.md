@@ -9,8 +9,8 @@ Portfolio: [muhammad-obaidullah.github.io](https://muhammad-obaidullah.github.io
 
 ### Now
 
-Leading a six-person AI evaluation team at Turing, reviewing generated code and ML
-workflows for correctness, dataset usage, and reproducibility.
+Actively looking for my next role — Data Scientist, AI Engineer, ML Engineer, or Forward
+Deployed Engineer. Remote, open to relocation.
 
 ---
 
@@ -24,46 +24,103 @@ output (intro, curriculum, lessons, sessions, assessments) that had to be consis
 gradeable, and reliable enough to publish, hosted as a real application rather than a
 one-off script.
 
-**Design.** A sequential pipeline: each stage hands its output to the next, starting from
-the raw user query and ending in a publishable course.
+**Design.** Two layers. A LangGraph orchestration layer plans and sequences the build;
+underneath it, a Python/FastAPI generation engine does the actual work each stage calls
+into — producing, parsing, and persisting content for one rubric at a time.
 
 ```mermaid
 flowchart LR
     Q[User query] --> V[Third-party API:
     short intro video]
+    Q --> IG[Introduction Generation
+    agent]
     V --> CP[Curriculum Planning
-    Agent]
+    agent]
+    IG --> CP
     CP --> LG[Lesson Generation
-    Agent]
+    agent]
     LG --> SG[Session Generation
-    Agent]
+    agent]
     SG --> AG[Assessment Generation
-    Agent]
+    agent]
     AG --> PUB[Published course]
 ```
 
-Every stage shares the same cross-cutting layer rather than repeating it:
+Every agent calls the same underlying layer rather than repeating logic itself:
 
-- **Schema validation** — each agent's output is checked against a TypeScript-defined schema before it's handed to the next stage, so a malformed curriculum can't silently produce a broken lesson.
 - **Retrieval (ChromaDB)** — any stage that needs reference material pulls it via retrieval instead of relying on the model's memory.
-- **Versioned storage (MongoDB)** — output is checkpointed after each stage, so a failure in, say, assessment generation doesn't lose the curriculum and lessons already built.
-- **Background processing + callback** — the whole pipeline runs as a background job since end-to-end generation takes too long for a synchronous request; the application is notified via callback when the course is ready.
-- **Retry/fallback around the third-party video API** — it's an external dependency outside our control, so the pipeline has to tolerate it failing without failing the whole course.
-- **LangSmith tracing** — every agent call and the video API call are traced, so a bad course can be debugged stage-by-stage instead of as one opaque run.
+- **Schema validation (TypeScript)** — each agent's output is checked against a defined schema before it's handed to the next stage, so a malformed curriculum can't silently produce a broken lesson.
+- **LangSmith tracing** — every agent call and tool call is traced, so a bad course can be debugged stage-by-stage instead of as one opaque run.
+- **Generation engine (below)** — the actual content-production, parsing, and persistence work for a given rubric.
+
+**Inside the generation engine.** Each agent's tool call lands here to actually produce
+content for one rubric:
+
+```mermaid
+flowchart LR
+    T[Tool call: generate
+    for a rubric] --> RB{Rubrics found
+    in MongoDB?}
+    RB -- no --> F[Fail fast,
+    fire callback]
+    RB -- yes --> EX{Content already
+    exists for this GSM?}
+    EX -- yes --> RU[Reuse existing
+    content]
+    EX -- no --> GN[Strict-format prompt
+    to the model]
+    GN --> PR[Regex parser to
+    structured slides/quiz]
+    RU --> VR[Store as new
+    version in MongoDB]
+    PR --> VR
+    VR --> CB[Fire callback]
+```
+
+**Closing the loop: assessment evaluation.** Publishing a quiz is only half the feature — a
+learner's answers have to be scored against the rubric, not just marked right or wrong.
+Once a learner submits responses to a generated assessment, a separate evaluation path
+grades them against the same rubric-aligned student outcomes the assessment was built
+from:
+
+```mermaid
+flowchart LR
+    LR[Learner submits
+    responses] --> EV[Evaluation prompt:
+    responses + rubric]
+    EV --> SC[Per-question
+    correct/incorrect
+    + explanation]
+    EV --> RS[Per-rubric-point
+    score]
+    SC --> TOT[Total score +
+    overall feedback]
+    RS --> TOT
+    TOT --> OUT[Parsed result
+    returned to app]
+```
+
+This closes the loop the resume bullet describes as "evaluate application activities based
+on student responses": generation and evaluation share the same rubric-derived student
+outcomes, so a learner is graded against exactly what the assessment was designed to test.
 
 **Key engineering decisions**
 
 | Challenge | How it was tackled | Why this approach |
 |---|---|---|
-| A flawed curriculum silently breaks every downstream lesson and assessment | Validate each stage's output against its schema before handing it to the next stage, and checkpoint to MongoDB after every stage | Catches bad output where it originates instead of after the whole course is built; a late-stage failure doesn't force regenerating earlier stages |
-| The intro-video API is a third-party dependency with no latency/uptime guarantee | Run the pipeline as a background job with retry/fallback around that one call | A slow or failing external call shouldn't take down the entire course build |
-| LLM-generated assessments need to stay gradeable, not just readable | Enforce a TypeScript-defined schema at generation time and iterate prompts against LangSmith evaluation traces | Free-text generation doesn't reliably produce a fixed structure a grading system can consume |
-| Curriculum, lessons, sessions, and assessments are inherently dependent on each other | Sequential pipeline instead of parallel subagents | Matches the real dependency graph directly, instead of generating stages in parallel and reconciling conflicts afterward |
+| The model has no native structured-output mode available on this call path, but output has to become gradeable, storable data | Prompts enforce an exact text format (explicit section separators, a few-shot example of correct output) and a hand-written regex parser converts the response into structured slide/question objects | Keeps generation on a plain chat-completions call while still getting output reliable enough to store and grade |
+| Regenerating content on every request wastes tokens and risks inconsistent rubric-aligned outcomes across runs | A predefined, curated dictionary of rubric-aligned student outcomes is checked first; existing learning content is reused if it already exists for that GSM; the model is only called when nothing already exists | Keeps outcomes consistent for rubrics that already have a vetted answer, and avoids paying generation cost twice for the same content |
+| A multi-stage generation pipeline is too slow to run inside a single synchronous HTTP request | The pipeline runs as a background task; the endpoint returns immediately, and a callback fires once the course is ready | The caller never blocks on a pipeline that can run well past a typical request timeout |
+| The OpenAI dependency can be down or rate-limited mid-pipeline | Health-checked before the pipeline starts; on failure the module is marked "failed" with no partial content instead of crashing mid-generation | Fails predictably and visibly rather than leaving a half-built module behind |
+| A failure partway through generation could otherwise leave no record of what happened | Every exception is caught, logged with a full traceback, and still written as a new queryable version with status "failed" — and the callback still fires | Failures stay debuggable after the fact, and the caller is never left waiting indefinitely |
+| Regenerating a module for the same rubric shouldn't silently overwrite the last known-good version | Looks up the latest version for the same gsm + curricula + target age and increments rather than overwriting | Keeps history auditable and protects a working version from being lost to a bad regeneration |
+| A single pass/fail per question doesn't tell a learner or instructor *why* performance fell short on a specific rubric characteristic | Evaluation scores each rubric point independently on a 0/1/2 scale (not demonstrated / partially / fully demonstrated) and sums to a total, alongside per-question correctness | Mirrors how the content was generated — against individual rubric characteristics — so feedback is actionable at the same granularity the course was built at |
 
-**Result.** Hosted, end-to-end system generating audience-specific learning materials and
-assessments, with prompts iterated and evaluated per agent using LangSmith traces.
+**Result.** Hosted, end-to-end system generating audience-specific learning materials,
+assessments, and rubric-based evaluation of learner responses, with prompts iterated and
+evaluated per agent using LangSmith traces.
 
-**Stack:** OpenAI API, LangChain, LangGraph, LangSmith, ChromaDB, MongoDB, Python,
+**Stack:** OpenAI API, LangChain, LangGraph, LangSmith, ChromaDB, FastAPI, MongoDB, Python,
 TypeScript.
 
 ---
@@ -118,41 +175,103 @@ precomputed metrics and narrower joins.
 
 ---
 
-### 3. Client onboarding OCR/NLP pipeline (DQ Lab)
+### 3. Client program onboarding: document extraction → DQ taxonomy mapping (DQ Lab)
 
-**Challenge.** Client onboarding required extracting and cross-referencing information
-from large volumes of documents — done manually, it was a recurring bottleneck that slowed
-every new client down.
+**Challenge.** Companies submitting a digital-learning program for DQ certification upload
+real-world program materials — PDFs and Word docs mixing tables, screenshots, and free
+text — that need to be broken into discrete "learning messages" and matched against a
+four-level competency taxonomy to produce a content-coverage rating. Manual review of this
+was the bottleneck slowing down every new submission.
 
-**Design.** Designed and built a production pipeline: layout detection isolates the
-regions that matter on each document, embeddings turn them into something comparable, and
-semantic matching cross-references extracted content against what onboarding actually
-needs.
+**Design.** Two stages, each a standalone worker process pulling off its own MongoDB-backed
+queue rather than processing inline in the API request — extraction first, then
+classification.
 
 ```mermaid
 flowchart LR
-    A[Incoming client
-    documents] --> B[YOLO-based
-    layout detection]
-    B --> C[BERT embeddings]
-    C --> D[Semantic matching
-    against onboarding data]
-    D --> E[Structured extraction
-    ready for onboarding]
+    U[Company uploads
+    program documents] --> SUB[Submit for
+    processing]
+    SUB --> EQ[(Extraction queue
+    MongoDB)]
+    EQ --> EW[Extraction worker]
+    EW --> PQ[(Prediction queue
+    MongoDB)]
+    PQ --> PW[Prediction worker]
+    PW --> REP[Content mapped to
+    DQ taxonomy →
+    rating report]
+```
+
+Both workers are long-running processes with retry limits and graceful shutdown handling,
+not request-scoped tasks — documents can take a long time to run through layout detection,
+OCR, and embedding models, well past anything an HTTP request should wait on.
+
+**Inside extraction.** Each document goes through layout detection, then gets its text
+filled in from whichever source is most reliable for that region — native PDF text where
+it exists, OCR only where it doesn't:
+
+```mermaid
+flowchart LR
+    D[Document] --> NT[Native PDF text
+    blocks - pymupdf]
+    D --> YL[YOLO layout detection:
+    Text / Table / Picture
+    regions]
+    NT --> RC[Reconcile: merge YOLO
+    regions with native
+    text blocks]
+    YL --> RC
+    RC --> PIC{Region is
+    Picture?}
+    PIC -- yes --> OCR[OCR with image
+    preprocessing - Tesseract]
+    PIC -- no --> NATIVE[Extract exact text from
+    PDF at that region -
+    no OCR, incl. tables]
+    OCR --> CH[Chunk + quality filter]
+    NATIVE --> CH
+    CH --> OUT[Learning messages]
+```
+
+**Inside classification.** Extracted text is matched against the competency taxonomy, from
+broad to specific:
+
+```mermaid
+flowchart LR
+    LM[Learning message] --> L5[Classify into coarse
+    competency family]
+    L5 --> EMB[Embed text, compare to
+    cached reference vectors
+    per taxonomy level]
+    EMB --> TB[Top-down weighted score:
+    finest level heaviest]
+    EMB --> BT[Bottom-up weighted score:
+    coarsest level heaviest]
+    TB --> AVG[Average both directions]
+    BT --> AVG
+    AVG --> PICK[Best match per level
+    + confidence score]
 ```
 
 **Key engineering decisions**
 
 | Challenge | How it was tackled | Why this approach |
 |---|---|---|
-| Client documents don't follow one fixed template | YOLO-based layout detection locates relevant regions by what they are, not where they sit on the page | Fixed-position or regex-based extraction breaks the moment a client's layout differs even slightly |
-| Extracted text rarely matches onboarding fields word-for-word | BERT embeddings + semantic matching instead of keyword/regex matching | Clients phrase the same information differently than the onboarding schema expects; semantic matching tolerates that, exact matching doesn't |
-| Hundreds of thousands of records couldn't be processed synchronously without stalling onboarding | MongoDB-backed job queues for async processing, Redis caching to avoid reprocessing | Keeps document processing off the critical path of onboarding itself |
-| Documents mix tables, stamps, signatures, and free text | Detect layout before generating embeddings, rather than embedding the raw page | Keeps noisy, irrelevant regions out of the embedding step, which made downstream semantic matching noticeably more accurate |
+| OCR is unreliable on text that's already extractable natively, but YOLO alone can't tell what a region actually says | Reconcile YOLO-detected regions against the PDF's native text blocks by bounding-box overlap; fall back to OCR only for regions YOLO classifies as pictures, extracting exact native text everywhere else, including tables | Native extraction is exact and fast; OCR is reserved for the one case where there's genuinely no text layer to read |
+| OCR accuracy on image-embedded text was inconsistent | Preprocess cropped image regions (normalize, threshold, Gaussian blur) and constrain Tesseract to a specific character whitelist and page-segmentation mode before running it | Cleaning the image and narrowing what Tesseract is allowed to output measurably reduces garbage characters in the result |
+| Not all extracted text is useful — headers, page furniture, and OCR noise would otherwise pollute the taxonomy mapping | A two-stage filter: a validity classifier drops non-sentence noise, then an education-relevance scorer drops anything below a tuned threshold | Keeps only text worth classifying, rather than asking the mapping stage to be robust against garbage input |
+| A single flat classifier can't reliably place text at the right level of a 4-level taxonomy | Classify into a coarse competency family first, then within that family compute embedding similarity against cached reference vectors at finer levels, combining a top-down-weighted score and a bottom-up-weighted score | Trusting only one direction (coarse→fine or fine→coarse) missed cases the other direction caught; averaging both was more robust than either alone |
+| Recomputing reference embeddings for the whole taxonomy on every request would be wasteful | Reference vectors per taxonomy code are precomputed once and reused for every comparison | Only the incoming text needs embedding at request time; the comparison set is fixed |
+| A single heavy document-processing request could block the API, or get lost on a crash/restart | Both extraction and classification run as separate worker processes pulling from MongoDB-backed queues with retry limits and graceful shutdown handling | Decouples long-running ML work from the API's request/response cycle and survives a worker restart mid-job |
 
-**Result.** Saved approximately 24 hours of manual research per week, running in
-production across hundreds of thousands of extracted records via MongoDB-backed job
-queues and Redis caching.
+**Result.** Company-submitted program documents are automatically broken into discrete
+learning messages and mapped against the DQ competency taxonomy with per-level confidence
+scores, feeding the content-coverage rating report — removing manual review as the
+bottleneck in the certification process.
+
+**Stack:** YOLO, pymupdf, Tesseract OCR, OpenCV, DistilBERT, multilingual sentence-embedding
+models, PyTorch, FastAPI, MongoDB, mongo-queue.
 
 ---
 
@@ -259,8 +378,3 @@ Co-authored a paper on tumour-infiltrating lymphocyte detection using a two-phas
 
 Python · TypeScript · PyTorch · Scikit-learn · XGBoost · FastAPI · LangChain / LangGraph ·
 MongoDB · Redis · SQL · BigQuery · Vertex AI · Docker
-
-### Open to
-
-Data Scientist, AI Engineer, ML Engineer, and Forward Deployed Engineer roles — remote,
-open to relocation.
