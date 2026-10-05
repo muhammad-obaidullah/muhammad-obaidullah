@@ -1,5 +1,3 @@
-<img align="right" src="photo.jpg" width="150" alt="Muhammad Obaidullah">
-
 # Hi, I’m Muhammad Obaidullah 👋
 
 I build data systems that are meant to actually work in production.
