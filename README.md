@@ -12,31 +12,31 @@
 
 ## About
 
-I'm a Data Scientist and backend engineer with 4+ years split between building AI
-applications and keeping the backend under them fast and boring in the right way. Most of
-that time has been at **Turing** and **DQ Lab**, building things like an agentic course
-generator, a document-extraction pipeline that classifies content against a competency
-taxonomy, and a scoring service that went from 3 seconds to under 3 milliseconds. Before
-that, I was doing fraud-risk modeling in fintech. Day to day that means Python, PyTorch,
-FastAPI, LangChain/LangGraph, SQL, and whatever database fits the job — mostly MongoDB and
-BigQuery. I also co-authored a paper on tumour-infiltrating lymphocyte detection using a
-two-phase deep CNN, back when I was deeper in computer vision.
+I am a Data Scientist and Backend Engineer with 4+ years of experience building AI
+applications, machine learning workflows and production Python services. I have built NLP
+systems that turn complex documents into structured information, hosted GenAI applications
+using LangChain, LangGraph and retrieval-augmented generation, and trained and evaluated
+deep-learning models on datasets spanning millions of activity records. I have also worked on
+the data side - analyzing product behavior and financial risk and led a six-person team
+evaluating AI-generated code and ML workflows. My stack is mostly Python, PyTorch, FastAPI,
+LangChain/LangGraph, SQL, BigQuery, TypeScript and MongoDB. I also co-authored a paper on
+tumour-infiltrating lymphocyte detection using a two-phase deep CNN.
 
-I'm currently looking for my next role — Data Scientist, AI Engineer, ML Engineer, or
-Forward Deployed Engineer. Remote, open to relocation.
+I am currently looking for my next role - Data Scientist, AI Engineer, ML Engineer or
+Forward Deployed Engineer. Remote, Onsite, Open to Relocation.
 
 ---
 
 ## Experience
 
-### GenAI course-builder
-**DQ Lab, 2024–2025**
+### GenAI Course-Builder
+**DQ Lab, 2024-2025**
 
-The brief was: give it a learning objective and an age group, and it generates a full
-course — intro, curriculum, lessons, sessions, an assessment — good enough to actually
+The brief was: give it a learning objective and an age group based query, and it generates a full
+course — intro, curriculum, lessons, sessions, an assessment - good enough to actually
 publish, not just a draft someone has to rewrite. I built this as a chain of agents rather
 than one big prompt. A planning agent lays out the curriculum, then separate agents handle
-lessons, sessions, and the assessment, each picking up from what the last one produced.
+lessons, sessions and the assessment, each picking up from what the last one produced.
 Alongside that, a short intro video gets generated through a third-party API, and a
 dedicated agent writes the slide that introduces the objective to the learner.
 
@@ -60,10 +60,9 @@ flowchart LR
 ```
 
 Most of the real engineering was in keeping a five-stage pipeline from quietly breaking
-itself. Each agent's output gets validated against a schema before the next one touches it
-— a malformed curriculum shouldn't be allowed to turn into a broken lesson two steps later.
+itself. Each agent's output gets validated against a schema before the next one touches it.
 Since a full course can take a while to generate, the whole thing runs as a background job
-and the app gets a callback when it's actually done, rather than making a request sit and
+and the app gets a callback when it is actually done, rather than making a request sit and
 wait.
 
 Underneath the agents is a generation engine that handles the less glamorous but more
@@ -80,11 +79,11 @@ the feedback is actually specific about what they did or didn't demonstrate.
 
 ---
 
-### Client program onboarding: document extraction → taxonomy mapping
+### Client Program Onboarding
 **DQ Lab, 2023–2024**
 
 Companies submitting a learning program for certification would upload their program
-materials — PDFs and Word docs, a mix of tables, screenshots, and plain text — and someone
+materials — PDFs and Word docs, a mix of tables, screenshots and plain text and Research Team
 had to manually read through all of it to figure out what competencies the content actually
 covered. That's the part I automated.
 
@@ -105,7 +104,7 @@ flowchart LR
 The interesting decision was how to read the documents in the first place. Running OCR on
 everything is slow and introduces errors on text that's already extractable natively from
 the PDF. So the pipeline uses a layout model to figure out what each region of a page is —
-text, a table, a picture — then reconciles that against the PDF's own native text layer.
+text, a table, a picture - then reconciles that against the PDF's own native text layer.
 Anything with real text underneath it gets pulled out directly and exactly, tables
 included. OCR only kicks in for regions that are genuinely just images, and even then the
 image gets cleaned up first to cut down on garbage characters.
@@ -123,11 +122,11 @@ not something an API call should be sitting around waiting on.
 
 ---
 
-### Scoring service: from 3 seconds to under 3 milliseconds
+### Scoring Service
 **DQ Lab, 2023**
 
 This was the first thing I touched at DQ Lab. The assessment scoring service had started
-life in R, and the direct port to Python — needed to fit the rest of the production stack —
+life in R, and the direct port to Python - needed to fit the rest of the production stack
 was correct but slow. The use case made that a real problem: a user finishes an assessment,
 the backend asks this service for a score, and that score has to show up on the portal
 immediately. There's no loading state budgeted for "the server is thinking."
@@ -147,7 +146,7 @@ flowchart LR
 
 The fix wasn't a clever algorithm, it was moving almost everything out of the request path.
 Rubric weights and normalization values don't change per request, so they get computed once
-and pulled from Redis instead of being recalculated — or re-fetched from the database — on
+and pulled from Redis instead of being recalculated or re-fetched from the database — on
 every single call. What's left at request time is just a vectorized calculation over
 numbers that are already sitting in cache, which is where Python actually gets to be fast.
 Writing the result to MongoDB for history and dashboards happens after the response goes
@@ -158,10 +157,10 @@ out, not before, so logging never competes with the thing the portal is actually
 ### Unified data model for ranking, experimentation & analysis
 **Turing, 2022**
 
-Before this, the signals that mattered for the product — impressions, job views,
-applications, assessments, interviews — lived as separate, disconnected datasets. That made
+Before this, the signals that mattered for the product - impressions, job views,
+applications, assessments, interviews lived as separate, disconnected datasets. That made
 three different jobs harder than they needed to be: giving ML engineers clean training
-data, running trustworthy A/B tests, and tracing a product hypothesis back to the events
+data, running trustworthy A/B tests and tracing a product hypothesis back to the events
 that actually caused it.
 
 ```mermaid
@@ -178,7 +177,7 @@ flowchart LR
     monitoring]
 ```
 
-I rebuilt the data model around one BigQuery source of truth connecting every stage of the
+I designed the data model around one BigQuery source of truth connecting every stage of the
 funnel, with Vertex AI pipelines keeping it current automatically. That one piece of
 infrastructure ended up powering three separate projects: clean, attributable training data
 for the ranking model; Mode Analytics dashboards comparing A/B experiments and funnel
