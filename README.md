@@ -1,3 +1,5 @@
+<img align="right" src="photo.jpg" width="150" alt="Muhammad Obaidullah">
+
 # Hi, I’m Muhammad Obaidullah 👋
 
 I build data systems that are meant to actually work in production.
@@ -29,4 +31,4 @@ Working across the full stack from raw data to production AI systems.
 ## Open to
 
 Collaboration on applied AI, knowledge systems, and data infrastructure.
-Reach me at obaidullahdsk@gmail.com
+Reach me at obaidullahdsk@gmail.com · +92 334 9841289
