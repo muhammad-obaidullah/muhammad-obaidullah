@@ -2,7 +2,7 @@
 
 # Muhammad Obaidullah
 
-**Data Scientist · AI Engineer · Backend Engineer**
+**Backend Engineer · AI Engineer · Data Scientist**
 
 [Portfolio](https://muhammad-obaidullah.github.io) · [LinkedIn](https://www.linkedin.com/in/m-obaidullah) · obaidullahdsk@gmail.com · +92 334 9841289
 
